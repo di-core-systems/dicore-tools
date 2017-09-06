@@ -30,7 +30,7 @@ class PostProcessing:
         new_model_count = 0
         models = []
 
-        for line in lines:
+        for line in lines[1:]:
             parts = line[0].split(";")
 
             if 'true' in parts[4]:
@@ -50,13 +50,21 @@ class PostProcessing:
 
             if len(parts) > 6:
                 new_model_count+=1;
-                models.append(parts[6])
+                models.append(parts[6].replace('new Model: ',''))
 
         agent_count = Utils.get_agent_count(filename)
         nr = Utils.get_nr(filename)
         expnr = Utils.get_expnr(filename)
         trainsetsize = Utils.get_trainset_size(filename, expnr)
         size = len(lines)-1
+
+        avg_model_size = 0;
+
+        for model in models:
+            avg_model_size += int(model)
+
+        if new_model_count > 0:
+            avg_model_size = avg_model_size / new_model_count
 
         result_overview = []
         result_overview.append("experiment nr   : " + str(nr) +"\n")
@@ -71,7 +79,9 @@ class PostProcessing:
         result_overview.append("false negative  : " + str(false_negative_count) +"\n")
         result_overview.append("   type 2 error : " + str(100.0 / size * false_negative_count) +"\n")
         result_overview.append("diff            : " + str(detected_count - true_positive_count) +"\n")
-        result_overview.append("generated models: " + str(new_model_count) +"\n\n")
+        result_overview.append("generated models: " + str(new_model_count) +"\n")
+        result_overview.append("avg model size  : " + str(avg_model_size) +"\n\n")
+
 
         parent_path = os.path.abspath(os.path.join(filename, os.pardir))
         file = Utils.get_or_create_file(parent_path, "result.txt")
@@ -94,13 +104,14 @@ class PostProcessing:
         csv_content.append(str(100.0 / size * false_negative_count))
         csv_content.append(str(detected_count - true_positive_count))
         csv_content.append(str(new_model_count))
+        csv_content.append(str(avg_model_size))
 
         self._results[filename[filename.rindex('/') + 1:]] = csv_content
 
 
         if not os.path.exists(parent_path + "/"+"resulttable.txt"):
             header = ["nr; filename; agent count; train set size; dataset size; detected; true positive; true negative; "
-                      "false positive; type 1 error; false negative; type 2 error; diff, generated models"]
+                      "false positive; type 1 error; false negative; type 2 error; diff, generated models, avg model size"]
             file = Utils.get_or_create_file(parent_path, "resulttable.txt")
             writer = csv.writer(file, delimiter='\t')
             writer.writerow(header)
@@ -222,15 +233,62 @@ class PostProcessing:
                 fnset[trainsetsize].append(fn)
         self.write_csv_table(data, name, "FALSE_NEGATIVE")
 
+        data = {}
+
+        for exp in self._results:
+            value = self._results.get(exp)
+            name = value[1]
+            trainsetsize = int(value[3])
+            fn = int(value[13])
+
+            if sa in name:
+
+                if not data.has_key(sa):
+                    data[sa] = {}
+                fnset = data[sa]
+
+            elif ca in name:
+
+                if not data.has_key(ca):
+                    data[ca] = {}
+                fnset = data[ca]
+
+            if not fnset.has_key(trainsetsize):
+                fnset[trainsetsize] = [fn]
+            else:
+                fnset[trainsetsize].append(fn)
+        self.write_csv_table(data, name, "GENERATED_MODELS")
+
+        data = {}
+
+        for exp in self._results:
+            value = self._results.get(exp)
+            name = value[1]
+            trainsetsize = int(value[3])
+            fn = int(value[14])
+
+            if sa in name:
+
+                if not data.has_key(sa):
+                    data[sa] = {}
+                fnset = data[sa]
+
+            elif ca in name:
+
+                if not data.has_key(ca):
+                    data[ca] = {}
+                fnset = data[ca]
+
+            if not fnset.has_key(trainsetsize):
+                fnset[trainsetsize] = [fn]
+            else:
+                fnset[trainsetsize].append(fn)
+        self.write_csv_table(data, name, "AVG_MODEL_SIZE")
+
         # data.append(value[2]) # agents
         # data.append(value[3]) # trainset
         # data.append(value[12]) # diff
         # data.append(value[9]) # false positive
-
-        print sorted(data.keys())
-        print sorted(data.values())
-
-
 
     def write_csv_table(self, data, name, nameext):
         parent_path = os.path.abspath(os.path.join(name, os.pardir))
@@ -256,8 +314,6 @@ class PostProcessing:
 
                     if index < len(_set):
                         csv_content.append(_set[index])
-
-                print(index)
 
                 file = Utils.get_or_create_file(parent_path + "/../statistics", a + "_" + nameext + "_Table.csv")
                 writer = csv.writer(file, delimiter=';')
